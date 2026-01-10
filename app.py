@@ -1,177 +1,92 @@
 import streamlit as st
-import datetime
+from datetime import datetime
 
 # ページ設定
 st.set_page_config(
-    page_title="CVS Trend Hunter (Time Traveler)",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    page_title="トレンド・タイムマシン・プロンプト",
+    page_icon="🥐",
+    layout="centered"
 )
 
-# セッション状態
-if 'research_result' not in st.session_state:
-    st.session_state.research_result = ""
+# タイトルと説明
+st.title("🥐 トレンド・タイムマシン")
+st.markdown("""
+過去の流行調査用プロンプト生成ツールです。
+調査したい「対象」「時期」「地域」を入力すると、Gemini Deep Research用の強力なプロンプトを作成します。
+""")
 
-st.title("🍩 コンビニスイーツ・パン トレンド予測＆発掘ラボ")
-st.markdown("---")
+st.divider()
 
-# サイドバー設定
-st.sidebar.header("検索条件の設定")
+# --- 入力フォーム ---
 
-# 1. 大枠のカテゴリー
-broad_category = st.sidebar.selectbox(
-    "1. 大カテゴリー",
-    ["スイーツ", "パン", "総菜パン/軽食"]
+col1, col2 = st.columns(2)
+
+with col1:
+    # 調査対象（デフォルトはスイーツだが変更可能）
+    target_item = st.text_input("調査対象（例：スイーツ、パン、タピオカ）", value="スイーツ・パン")
+
+with col2:
+    # 時期指定
+    current_year = datetime.now().year
+    start_year = st.number_input("開始年", min_value=1950, max_value=current_year, value=2010)
+    end_year = st.number_input("終了年", min_value=1950, max_value=current_year, value=2015)
+
+# 地域指定（複数選択可能に）
+# よくある地域をプリセットしつつ、自由入力も追加できるようにする
+default_regions = ["日本全国", "東京", "大阪", "韓国", "台湾", "ニューヨーク", "パリ"]
+selected_regions = st.multiselect(
+    "調査対象の地域（複数選択可）",
+    options=default_regions,
+    default=["日本全国"]
 )
 
-# 2. サブジャンル
-if broad_category == "スイーツ":
-    sub_genres = [
-        "指定なし（全域）",
-        "シュークリーム・エクレア類",
-        "プリン・カップデザート類",
-        "ケーキ・スポンジ類",
-        "チーズケーキ類",
-        "チョコレート・焼き菓子類",
-        "和菓子・ネオ和菓子類",
-        "アイス・氷菓類",
-        "★未定義・新食感・ハイブリッド"
-    ]
-elif broad_category == "パン":
-    sub_genres = [
-        "指定なし（全域）",
-        "食パン・食事パン系",
-        "クロワッサン・デニッシュ系",
-        "ハード系・ドイツパン系",
-        "菓子パン（メロンパン等）系",
-        "ドーナツ・揚げパン系",
-        "★未定義・新食感・ハイブリッド"
-    ]
-else:
-    sub_genres = [
-        "指定なし（全域）",
-        "サンドイッチ・バーガー類",
-        "カレーパン・揚げ物入り類",
-        "焼き込み・ピザ類",
-        "中華まん・ホットスナック的パン",
-        "★異業種かけ合わせ・新形態"
-    ]
+# 自由記述の地域追加（もしリストにない場合）
+custom_region = st.text_input("その他の地域（上記にない場合入力）")
+if custom_region:
+    selected_regions.append(custom_region)
 
-target_genre = st.sidebar.selectbox("2. 重点調査サブジャンル", sub_genres)
+# --- プロンプト生成ロジック ---
 
-# 3. 過去トレンドとの比較設定（ここを追加）
-st.sidebar.subheader("📅 時間軸設定")
-use_past_comparison = st.sidebar.checkbox("過去のトレンド（昨対など）を踏まえる", value=True)
+if st.button("プロンプトを作成する", type="primary"):
+    
+    # 地域リストを文字列化
+    regions_str = "、".join(selected_regions)
+    if not regions_str:
+        regions_str = "特に指定なし（世界的なトレンド含む）"
 
-target_period_label = "企画対象時期（予測先）"
-target_period = st.sidebar.text_input(target_period_label, "2026年 夏（7月〜8月）")
-
-past_period_instruction = ""
-if use_past_comparison:
-    past_period = st.sidebar.text_input("比較対象の過去時期（昨対など）", "2025年 夏（7月〜8月）")
-    past_period_instruction = f"""
-    **【時系列分析の必須指示】**
-    まず、**「{past_period}」**に流行していた{broad_category}の主要トレンド（ヒット商品、味の傾向、キーワード）を特定してください。
-    その上で、それらが**「{target_period}」**に向けてどう進化・変化するかを予測してください。
-    （例：去年は「レモン」等の酸味が流行った → 消費者は酸味に慣れたため、次は「苦味」を加えた柑橘や、逆に「濃厚さ」への揺り戻しが起きている、など）
-    """
-
-# 4. トレンドの「発生要因」フィルター
-trend_axis = st.sidebar.multiselect(
-    "トレンドの兆候・ベクトル",
-    [
-        "食感の革新（とろとろ、ザクザク）",
-        "ビジュアル（断面、巨大、極小）",
-        "背徳感（ギルティ）",
-        "ヘルシー（高タンパク、低糖質）",
-        "レトロ・リバイバル",
-        "異国情緒（韓国、イタリア、北欧等）",
-        "季節性・旬（フルーツ、気温対応）"
-    ],
-    default=["食感の革新（とろとろ、ザクザク）", "季節性・旬（フルーツ、気温対応）"]
-)
-
-# 5. エリアと量
-target_area = st.sidebar.text_input("調査対象エリア", "日本国内（専門店）、韓国、フランス、アメリカ")
-min_count = st.sidebar.slider("最低収集件数の目安", 10, 50, 20, step=5)
-
-# メインエリア
-st.subheader(f"🔍 {target_period} トレンド予測 ({target_genre})")
-
-if st.button("Deep Research用プロンプトを生成"):
-    # ジャンル特記
-    genre_instruction = ""
-    if "未定義" in target_genre:
-        genre_instruction = "既存カテゴリに収まらない、新しい形態・食感の商品を優先的に探してください。"
-    elif target_genre != "指定なし（全域）":
-        genre_instruction = f"「{target_genre}」およびその進化系を中心に探してください。"
-
+    # プロンプト本文
     prompt_text = f"""
-あなたは「トレンドの系譜」を読み解く熟練マーケターです。
-GeminiのDeep Research機能を使用し、以下の時系列分析に基づいた商品トレンドを調査してください。
+あなたはプロフェッショナルな「トレンドリサーチャー」兼「文化史家」です。
+以下のテーマについて、Geminiの検索能力（Deep Research）を最大限に活用し、徹底的な調査を行ってください。
 
-## 目的
-{target_area}における、**{target_period}**にヒットするであろう{broad_category}の予測と具体例のリストアップ。
-「数（Volume）」を出しつつ、過去からの「進化の文脈（Context）」を付与すること。
+## 調査テーマ
+* **対象:** {target_item}
+* **期間:** {start_year}年 〜 {end_year}年
+* **地域:** {regions_str}
 
-## 調査プロセス（時系列分析）
-1. **過去の振り返り**: {past_period}に何が流行っていたか（味、食感、素材）を簡単に特定。
-2. **現在の兆し**: その反動、あるいは進化系として、今イノベーター層の間で何が来ているか。
-3. **未来の提案**: 上記を踏まえ、{target_period}に市場に受ける商品をリストアップ。
+## 「流行った」の定義と基準
+1.  **認知度:** 当時を知る人が「あー、それあったね！」「懐かしい！」と共感できるレベルの認知度があるもの。
+2.  **メディア露出:** 雑誌、テレビ番組、ニュースなどで特集が組まれた実績があるもの。
+3.  **社会的現象:** 行列ができた、売り切れが続出した、SNS（ブログ、Twitter/X、Instagram等）で話題になったもの。
 
-{past_period_instruction}
-
-## 調査条件
-* **重点ジャンル**: {target_genre} ({genre_instruction})
-* **トレンドの兆候**: {", ".join(trend_axis)}
-* **ターゲット**: イノベーター・アーリーアダプター層
-* **収集数**: 妥協なく、**最低{min_count}件以上**リストアップすること。
+## 重要な制約事項（必ず守ってください）
+1.  **「数」を最優先してください:** 代表的な3〜5個に絞ることは**禁止**です。AIによる勝手な選抜や要約を行わず、Deep Researchで見つかる限り**As much as possible（可能な限り全て）**列挙してください。
+2.  **証拠の提示:** なぜそれが流行ったと言えるのか、具体的な「証拠（当時のメディア掲載、販売数、ブームの背景、SNSでの反応など）」を必ず記載してください。
+3.  **網羅性:** 一過性のブームだけでなく、その時期に定着し始めたものも含めてください。
 
 ## 出力フォーマット
-見やすさのため、以下のブロック形式で{min_count}件以上記述してください。
+情報は以下の表形式で整理して出力してください。数が多いため、必要であれば表を分割しても構いません。
 
----
-### 【No.X】 商品名 / トレンド名
-**(検索用キーワード)**
+| 品目名（商品名） | 発祥/流行地域 | 流行時期（ピーク） | 流行の証拠・背景・数値データ | 概要・特徴 |
+| :--- | :--- | :--- | :--- | :--- |
+| (例) マリトッツォ | イタリア→日本 | 2021年頃 | Instagramでの投稿数激増、カルディでの売り切れ続出 | ブリオッシュ生地に生クリームを挟んだ菓子 |
 
-* **どんな商品か**:
-    * 味、構成、食感、見た目。
-* **トレンドの系譜（進化のロジック）**:
-    * **Last Year ({past_period}頃)**: 似た文脈で流行ったもの（例：昨年のマリトッツォ）。
-    * **Next Step**: なぜ今年、これが来るのか（例：クリーム過多に飽きた層に向けた、生地重視の進化系だから）。
-* **販売現場のリアル**:
-    * どこで（路面店/海外）、どんな雰囲気で売られているか。客層は？
-* **コンビニ担当者へのメモ**:
-    * どの棚（チルド/パン/常温）に置くべきか。
----
+**リサーチを開始してください。**
 """
-    st.code(prompt_text, language="text")
-    st.success("👆 「過去（昨年）のトレンド」を踏まえて「今年」を予測させるプロンプトです。季節商品の企画に特に有効です。")
 
-# 結果格納エリア
-st.markdown("---")
-st.subheader("📝 調査結果のストック")
-st.session_state.research_result = st.text_area(
-    "Geminiからのレポートを貼り付け",
-    value=st.session_state.research_result,
-    height=600
-)
+    st.success("プロンプトを作成しました！右上のコピーボタンを押してGeminiに貼り付けてください。")
+    
+    # プロンプトの表示（コピーボタン付き）
+    st.code(prompt_text, language="markdown")
 
-# 簡易リスト化
-if st.session_state.research_result:
-    st.markdown("---")
-    if st.button("会議用比較リストを作成"):
-        formatting_prompt = f"""
-あなたは編集者です。以下の調査レポートを、**「去年との比較」**がわかる会議用リストに変換してください。
-
-## 原文データ
-{st.session_state.research_result}
-
-## 出力形式（Markdown Table）
-| No | 今年の候補商品名 | 特徴・食感 | トレンドの系譜（去年は何だったか→今年はなぜこれか） | 販売スタイル |
-|---|---|---|---|---|
-| 1 | ... | ... | (例：昨年流行ったカヌレの進化系。より食感をソフトにしたもの) | ... |
-
-※ 全ての商品を含めてください。
-"""
-        st.code(formatting_prompt, language="text")
+    st.info("💡 **Tips:** Geminiからの回答が途中で止まった場合は、「続けて」と入力するか、「表の続きを出力して」と指示してください。")
